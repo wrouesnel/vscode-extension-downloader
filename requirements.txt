@@ -1,0 +1,6 @@
+Click
+structlog
+flake8
+black
+mypy
+requests
