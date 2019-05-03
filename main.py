@@ -100,12 +100,63 @@ def cli():
     pass
 
 
+@cli.command("print-download-links")
+@click.option("--index-file", default="index.json", type=click.File("rt"))
+def print_download_links(index_file):
+    """Use an index of extensions to print VSIX links"""
+
+    logger.info("Loading index file")
+    index = json.load(index_file)
+
+    for publisher_name, extension_dict in index.items():
+        for extension_name, versions in extension_dict.items():
+            for version in versions:
+                download_path = get_vspackage_path(
+                    publisher_name, extension_name, version
+                )
+                sys.stdout.write(download_path + "\n")
+
+
+@cli.command("mirror-extensions")
+@click.option("--index-file", default="index.json", type=click.File("rt"))
+@click.option("--output-dir", default="vscode-extensions", type=click.STRING)
+def mirror_extensions(index_file, output_dir):
+    """Use an index of extensions to download VSIX files for extensions"""
+
+    logger.info("Loading index file")
+    index = json.load(index_file)
+    logger.info("Loaded index file")
+
+    os.makedirs(output_dir, exist_ok=True)
+
+    for publisher_name, extension_dict in sorted(index.items()):
+        for extension_name, versions in sorted(extension_dict.items()):
+            for version in sorted(versions, reverse=True):
+                download_path = get_vspackage_path(
+                    publisher_name, extension_name, version
+                )
+
+                log = logger.bind(
+                    publisher_name=publisher_name,
+                    extension_name=extension_name,
+                    version=version,
+                )
+                log.info("Downloading extension")
+
+                try:
+                    subprocess.check_call(
+                        ["wget", "--content-disposition", download_path], cwd=output_dir
+                    )
+                except subprocess.CalledProcessError:
+                    log.error("Failed downloading package")
+
+
 @cli.command("download-index")
-@click.option('--index-file', default="index.json", type=click.File('wb'))
+@click.option("--index-file", default="index.json", type=click.File("wt"))
 def download_index(index_file):
     """Download index of data. Prerequisite for mirroring extensions."""
     # Dictionary of extension data
-    extension_data = defaultdict(list)
+    extension_data = defaultdict(lambda: defaultdict(list))
 
     # Initial page number of results
     pageNumber = 1
@@ -132,16 +183,17 @@ def download_index(index_file):
 
         for i in extensions:
             for version in i["versions"]:
-                extension_data[
-                    (i["publisher"]["publisherName"], i["extensionName"])
+                extension_data[i["publisher"]["publisherName"]][
+                    i["extensionName"]
                 ].append(version["version"])
 
         pageNumber += 1
 
     logger.bind(extension_count=len(extension_data)).info("Got extensions")
 
-    json.dump(extension_data, index_file)
+    json.dump(extension_data, index_file, sort_keys=True)
     logger.info("Index download complete.")
+
 
 if __name__ == "__main__":
     cli()
